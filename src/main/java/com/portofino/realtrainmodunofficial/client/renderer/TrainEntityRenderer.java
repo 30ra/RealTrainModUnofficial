@@ -179,6 +179,7 @@ public class TrainEntityRenderer extends EntityRenderer<TrainEntity> {
             boolean aggressiveDistanceCulling = !ridingThisTrain && cameraDistanceSq > aggressiveThreshold * aggressiveThreshold;
             boolean renderRollsigns = ridingThisTrain || cameraDistanceSq < rollsignThreshold * rollsignThreshold;
             boolean renderLights = ridingThisTrain || cameraDistanceSq < lightThreshold * lightThreshold;
+            int lodLevel = resolveLodLevel(Math.sqrt(cameraDistanceSq), ridingThisTrain, compatibilityHeavy);
             int trainPackedLight = resolveTrainPackedLight(entity, packedLight);
 
             boolean modelScriptRunning = model.hasRenderScript();
@@ -187,7 +188,7 @@ public class TrainEntityRenderer extends EntityRenderer<TrainEntity> {
             // In that case, wheel/truck groups belong in the main model and must NOT be filtered out.
             boolean modelHasScript = modelScriptRunning || def.hasScript();
             MqoModelLoader.GroupPredicate groupFilter =
-                groupName -> shouldRenderTrainGroup(groupName, renderInterior, aggressiveDistanceCulling, compatibilityHeavy, def, modelHasScript, modelScriptRunning);
+                groupName -> shouldRenderTrainGroup(groupName, renderInterior, aggressiveDistanceCulling, compatibilityHeavy, def, modelHasScript, modelScriptRunning, lodLevel);
             MqoModelLoader.GroupTransform doorTransform = new MqoModelLoader.GroupTransform() {
                 @Override public void apply(PoseStack stack, String groupName) {
                     applyRunningGearTransform(stack, entity, def, model, groupName, renderYaw, partialTicks);
@@ -483,9 +484,32 @@ public class TrainEntityRenderer extends EntityRenderer<TrainEntity> {
         }
     }
 
+    private static int resolveLodLevel(double cameraDistance, boolean ridingThisTrain, boolean compatibilityHeavy) {
+        if (ridingThisTrain) {
+            return 0;
+        }
+        if (compatibilityHeavy) {
+            if (cameraDistance >= 72.0D) {
+                return 2;
+            }
+            if (cameraDistance >= 48.0D) {
+                return 1;
+            }
+            return 0;
+        }
+        if (cameraDistance >= 96.0D) {
+            return 2;
+        }
+        if (cameraDistance >= 64.0D) {
+            return 1;
+        }
+        return 0;
+    }
+
     private static boolean shouldRenderTrainGroup(String groupName, boolean renderInterior,
                                                   boolean aggressiveDistanceCulling, boolean compatibilityHeavy,
-                                                  VehicleDefinition def, boolean hasScript, boolean scriptActuallyRunning) {
+                                                  VehicleDefinition def, boolean hasScript, boolean scriptActuallyRunning,
+                                                  int lodLevel) {
         if (groupName == null || groupName.isBlank()) {
             return true;
         }
@@ -543,6 +567,27 @@ public class TrainEntityRenderer extends EntityRenderer<TrainEntity> {
                 || normalized.contains("desk")
                 || normalized.contains("instrument")
                 || normalized.contains("panel")) {
+                return false;
+            }
+        }
+        if (lodLevel >= 1) {
+            if (normalized.contains("detail")
+                || normalized.contains("wiper")
+                || normalized.contains("connector")
+                || normalized.contains("hose")
+                || normalized.contains("step")
+                || normalized.contains("pantograph")
+                || normalized.contains("antenna")
+                || normalized.contains("fan")
+                || normalized.contains("under")) {
+                return false;
+            }
+        }
+        if (lodLevel >= 2) {
+            if (normalized.contains("door")
+                || normalized.contains("window")
+                || normalized.contains("handle")
+                || normalized.contains("lamp")) {
                 return false;
             }
         }
