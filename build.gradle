@@ -2,7 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'net.neoforged.gradle.userdev' version '7.0.192'
-    id 'com.gradleup.shadow' version '8.1.1'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -130,8 +130,8 @@ dependencies {
     // implementation project(":myproject")
 
     // For more info:
-    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
-    // http://www.gradle.org/docs/current/userguide/dependency_management.html
+    // http://docs.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
+    // http://docs.gradle.org/docs/current/userguide/dependency_management.html
 }
 
 // 同梱デフォルトパック: bundled_pack_src/<PackName>/ を zip 化して jar の
