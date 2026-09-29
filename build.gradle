@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'net.neoforged.gradle.userdev' version '7.0.192'
+    id 'com.gradleup.shadow' version '8.1.1'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -105,6 +106,8 @@ dependencies {
     // jar への同梱 (jsRuntime) は不可 (org.openjdk.nashorn モジュールと二重エクスポート衝突)。コンパイル参照のみ。
     implementation "org.openjdk.nashorn:nashorn-core:15.4"
     // Bundled add-on ATSAssistMod+ uses Jackson for IFTTT rule serialization.
+    // Jackson は他MODとの競合を避けるため RTMU 専用名前空間へリロケーションする。
+    // relocate により com.fasterxml.jackson.* → com.portofino.realtrainmodunofficial.jackson.* へ変換される。
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.2"
     jsRuntime "com.fasterxml.jackson.core:jackson-databind:2.15.2"
 
@@ -141,11 +144,22 @@ def buildE257DefaultPack = tasks.register('buildE257DefaultPack', Zip) {
     // MQO/テクスチャは既圧縮 or テキストなので標準圧縮で十分
 }
 
-tasks.named('jar', Jar).configure {
+// Shadow プラグイン設定: Jackson をリロケーション
+tasks.named('shadowJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    archiveClassifier.set('')
+    
+    // Jackson パッケージを RTMU 専用名前空間へリロケーション
+    relocate 'com.fasterxml.jackson', 'com.portofino.realtrainmodunofficial.jackson'
+    
+    // 不要なメタデータを除外
+    exclude 'META-INF/maven/**'
+    
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn buildE257DefaultPack
+    
     // 開発用プリフライトは頒布物に含めない。
     exclude 'com/portofino/realtrainmodunofficial/dev/**'
+    
     // LGPL-3.0 §4(b): 頒布物には GNU GPL と本ライセンス文書のコピーを添付すること。
     // LGPL-3.0 は GPL-3.0 の条項を取り込むライセンスなので、2 つで 1 セット。
     // ※ META-INF/LICENSE は依存ライブラリ (GraalVM 等) のもので別物。
@@ -174,6 +188,11 @@ tasks.named('jar', Jar).configure {
         // ResolutionException (org.objectweb.asm.tree の二重エクスポート) になる。
         exclude 'org/objectweb/**'
     }
+}
+
+// 既存の jar タスクを無効化 (shadowJar に置き換え)
+tasks.named('jar', Jar).configure {
+    enabled = false
 }
 
 // Windows: ModrinthApp の rtmu プロファイル (APPDATA 配下)。他OSは従来パスにフォールバック。
@@ -229,8 +248,8 @@ tasks.register('scriptPreflight', JavaExec) {
 }
 
 tasks.register('copyJarToModrinthMods') {
-    dependsOn tasks.named('jar')
-    def jarFile = tasks.named('jar').flatMap { it.archiveFile }
+    dependsOn tasks.named('shadowJar')
+    def jarFile = tasks.named('shadowJar').flatMap { it.archiveFile }
     def targets = deployTargets
     inputs.file(jarFile)
     onlyIf { !targets.isEmpty() }
@@ -250,11 +269,12 @@ tasks.register('copyJarToModrinthMods') {
     }
 }
 
-tasks.named('jar').configure {
+tasks.named('shadowJar').configure {
     finalizedBy(tasks.named('copyJarToModrinthMods'))
 }
 
 tasks.named('build').configure {
+    dependsOn tasks.named('shadowJar')
     finalizedBy(tasks.named('copyJarToModrinthMods'))
 }
 
@@ -330,5 +350,3 @@ idea {
         downloadJavadoc = true
     }
 }
-
-
