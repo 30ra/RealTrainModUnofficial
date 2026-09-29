@@ -1,6 +1,7 @@
 plugins {
     id 'fabric-loom' version '1.10.5'
     id 'java-library'
+    id 'com.gradleup.shadow' version '8.1.1'
 }
 
 version = mod_version
@@ -50,12 +51,11 @@ dependencies {
     compileOnly "org.ow2.asm:asm-util:9.7"
 
     //ATSAssistMod+ の IFTTT ルール保存に使う (本体へ統合済みの部分が参照する)。
+    // Jackson は他MODとの競合を避けるため RTMU 専用名前空間へリロケーションする。
+    // relocate により com.fasterxml.jackson.* → com.portofino.realtrainmodunofficial.jackson.* へ変換される。
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.2"
-    include "com.fasterxml.jackson.core:jackson-databind:2.15.2"
     implementation "com.fasterxml.jackson.core:jackson-core:2.15.2"
-    include "com.fasterxml.jackson.core:jackson-core:2.15.2"
     implementation "com.fasterxml.jackson.core:jackson-annotations:2.15.2"
-    include "com.fasterxml.jackson.core:jackson-annotations:2.15.2"
 }
 
 //同梱デフォルトパック: bundled_pack_src/<PackName>/ を zip 化して jar に入れる。
@@ -65,9 +65,19 @@ def buildE257DefaultPack = tasks.register('buildE257DefaultPack', Zip) {
     destinationDirectory = layout.buildDirectory.dir('generated_bundled_packs')
 }
 
-tasks.named('jar', Jar).configure {
+// Shadow プラグイン設定: Jackson をリロケーション
+tasks.named('shadowJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    archiveClassifier.set('')
+    
+    // Jackson パッケージを RTMU 専用名前空間へリロケーション
+    relocate 'com.fasterxml.jackson', 'com.portofino.realtrainmodunofficial.jackson'
+    
+    // 不要なメタデータを除外
+    exclude 'META-INF/maven/**'
+    
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn buildE257DefaultPack
+    
     //LGPL-3.0 §4(b): 頒布物には GNU GPL と本ライセンス文書のコピーを添付すること。
     from('LICENSE') { rename { 'LICENSE_LGPL-3.0.txt' } }
     from('COPYING') { rename { 'LICENSE_GPL-3.0.txt' } }
@@ -78,6 +88,11 @@ tasks.named('jar', Jar).configure {
         into 'assets/realtrainmodunofficial/bundled_packs/vehicle'
         rename { 'E257_DefaultPack_Readme.txt' }
     }
+}
+
+// 既存の jar タスクを無効化 (shadowJar に置き換え)
+tasks.named('jar', Jar).configure {
+    enabled = false
 }
 
 //★同梱パックを <b>開発実行にも</b> 行き渡らせる。
