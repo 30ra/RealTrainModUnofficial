@@ -1,7 +1,7 @@
 plugins {
     id 'fabric-loom' version '1.10.5'
     id 'java-library'
-    id 'com.gradleup.shadow' version '8.1.1'
+    id 'com.gradleup.shadow' version '8.3.10'
 }
 
 version = mod_version
@@ -71,6 +71,17 @@ tasks.named('shadowJar', com.github.jengelman.gradle.plugins.shadow.tasks.Shadow
     
     // Jackson パッケージを RTMU 専用名前空間へリロケーション
     relocate 'com.fasterxml.jackson', 'com.portofino.realtrainmodunofficial.jackson'
+
+    // RTMU にソースとして同梱されている Trove も RTMU 専用名前空間へリロケーション。
+    // 他MOD / ライブラリの gnu.trove.* と split-package になるのを防ぐ。
+    relocate 'gnu.trove', 'com.portofino.realtrainmodunofficial.trove'
+
+    // Multi-Release JAR に残る元の Jackson パッケージを除外。
+    // Java 21 の module resolution で外部 Jackson と衝突するのを防ぐ。
+    exclude 'META-INF/versions/**/com/fasterxml/**'
+
+    // Jackson の ServiceLoader 定義をまとめる。
+    mergeServiceFiles()
     
     // 不要なメタデータを除外
     exclude 'META-INF/maven/**'

@@ -176,6 +176,14 @@ tasks.named('shadowJar') {
         'com.portofino.realtrainmodunofficial.jackson'
     )
 
+    // Troveも同様にRTMU専用名前空間へ移動する。
+    relocate(
+        'gnu.trove',
+        'com.portofino.realtrainmodunofficial.trove'
+    )
+    
+    mergeServiceFiles()
+
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn buildE257DefaultPack
 
@@ -189,7 +197,7 @@ tasks.named('shadowJar') {
     exclude 'META-INF/*.RSA'
     exclude 'module-info.class'
     exclude '**/module-info.class'
-
+    exclude 'META-INF/versions/**/com/fasterxml/**'
     // ASM は NeoForge が提供するため同梱しない。
     exclude 'org/objectweb/**'
 
