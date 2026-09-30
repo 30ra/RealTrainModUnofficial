@@ -2,7 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'net.neoforged.gradle.userdev' version '7.0.192'
-    id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'com.gradleup.shadow' version '8.3.10'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -89,6 +89,9 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 configurations {
     runtimeClasspath.extendsFrom localRuntime
     jsRuntime
+
+    // 最終JARへリロケーションして同梱するJackson専用構成
+    rtmuJackson
 }
 
 dependencies {
@@ -109,7 +112,11 @@ dependencies {
     // Jackson は他MODとの競合を避けるため RTMU 専用名前空間へリロケーションする。
     // relocate により com.fasterxml.jackson.* → com.portofino.realtrainmodunofficial.jackson.* へ変換される。
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.2"
-    jsRuntime "com.fasterxml.jackson.core:jackson-databind:2.15.2"
+
+    // RTMU内部に同梱してrelocationするJackson
+    rtmuJackson "com.fasterxml.jackson.core:jackson-annotations:2.15.2"
+    rtmuJackson "com.fasterxml.jackson.core:jackson-core:2.15.2"
+    rtmuJackson "com.fasterxml.jackson.core:jackson-databind:2.15.2"
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -132,6 +139,7 @@ dependencies {
     // For more info:
     // http://docs.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://docs.gradle.org/docs/current/userguide/dependency_management.html
+
 }
 
 // 同梱デフォルトパック: bundled_pack_src/<PackName>/ を zip 化して jar の
@@ -144,53 +152,70 @@ def buildE257DefaultPack = tasks.register('buildE257DefaultPack', Zip) {
     // MQO/テクスチャは既圧縮 or テキストなので標準圧縮で十分
 }
 
-// Shadow プラグイン設定: Jackson をリロケーション
-tasks.named('shadowJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+// Shadow プラグイン設定:
+// RTMU本体のバイトコードとJacksonを同時にShadowJarで処理する。
+// これにより RTMU 内の参照も
+// com.fasterxml.jackson.*
+//      ↓
+// com.portofino.realtrainmodunofficial.jackson.*
+// に書き換えられる。
+//
+// 最終的に shadowJar が「RTMU本体 + リロケーション済みJackson + リソース」を
+// 1本のJARとして生成する。
+tasks.named('shadowJar') {
     archiveClassifier.set('')
-    
-    // Jackson パッケージを RTMU 専用名前空間へリロケーション
-    relocate 'com.fasterxml.jackson', 'com.portofino.realtrainmodunofficial.jackson'
-    
-    // 不要なメタデータを除外
-    exclude 'META-INF/maven/**'
-    
+
+    // 最終JARへ入れる依存物はRTMU専用Jacksonだけ。
+    // NeoForgeやNashornなどをここから再同梱しない。
+    configurations = [project.configurations.rtmuJackson]
+
+    // JacksonをRTMU専用名前空間へ移動する。
+    // RTMU自身のclassファイル内の参照も同時に書き換えられる。
+    relocate(
+        'com.fasterxml.jackson',
+        'com.portofino.realtrainmodunofficial.jackson'
+    )
+
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn buildE257DefaultPack
-    
+
     // 開発用プリフライトは頒布物に含めない。
     exclude 'com/portofino/realtrainmodunofficial/dev/**'
-    
-    // LGPL-3.0 §4(b): 頒布物には GNU GPL と本ライセンス文書のコピーを添付すること。
-    // LGPL-3.0 は GPL-3.0 の条項を取り込むライセンスなので、2 つで 1 セット。
-    // ※ META-INF/LICENSE は依存ライブラリ (GraalVM 等) のもので別物。
+
+    // 不要な依存ライブラリのメタデータを除外。
+    exclude 'META-INF/maven/**'
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    exclude 'module-info.class'
+    exclude '**/module-info.class'
+
+    // ASM は NeoForge が提供するため同梱しない。
+    exclude 'org/objectweb/**'
+
+    // LGPL-3.0 §4(b)
     from('LICENSE') {
         rename { 'LICENSE_LGPL-3.0.txt' }
     }
     from('COPYING') {
         rename { 'LICENSE_GPL-3.0.txt' }
     }
+
     from(buildE257DefaultPack.flatMap { it.archiveFile }) {
         into 'assets/realtrainmodunofficial/bundled_packs/vehicle'
     }
-    // パック作者の Readme は zip の中だけでなく、展開先フォルダ (rtm_default_assets) の
-    // zip と同じ場所にも置く。BundledPackInstaller が zip 以外もそこへコピーする。
+
     from('bundled_pack_src/E257_DefaultPack/Readme.txt') {
         into 'assets/realtrainmodunofficial/bundled_packs/vehicle'
         rename { 'E257_DefaultPack_Readme.txt' }
     }
-    from {
-        configurations.jsRuntime
-                .filter { it.isDirectory() || it.name.endsWith('.jar') }
-                .collect { it.isDirectory() ? it : zipTree(it) }
-    } {
-        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class', '**/module-info.class'
-        // ASM は NeoForge がモジュールパスで提供済み。同梱すると本番で
-        // ResolutionException (org.objectweb.asm.tree の二重エクスポート) になる。
-        exclude 'org/objectweb/**'
-    }
+
+    // jsRuntime はJackson用ではないため、ここからは同梱しない。
+    // NeoForge側のNashorn/その他ランタイムとの二重同梱を防ぐ。
 }
 
-// 既存の jar タスクを無効化 (shadowJar に置き換え)
+// 通常のjarは使わず、ShadowJarを最終成果物にする。
+// 最終的に build/libs/<mod_id>-<version>.jar が1本生成される。
 tasks.named('jar', Jar).configure {
     enabled = false
 }
